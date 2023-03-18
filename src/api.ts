@@ -1,26 +1,76 @@
-export const getToken = async () => {
-	const response = await fetch('https://accounts.spotify.com/api/token', {
+const clientId = import.meta.env.VITE_SPOTIFY_CLIENT_ID;
+const clientSecret = import.meta.env.VITE_SPOTIFY_CLIENT_SECRET;
+
+export const getToken = () => {
+	return fetch('https://accounts.spotify.com/api/token', {
 		method: 'POST',
 		headers: {
 			'Content-Type': 'application/x-www-form-urlencoded',
-			Authorization: `Basic ${btoa(
-				`${import.meta.env.VITE_SPOTIFY_CLIENT_ID}:${
-					import.meta.env.VITE_SPOTIFY_CLIENT_SECRET
-				}`
-			)}`,
+			Authorization: `Basic ${btoa(`${clientId}:${clientSecret}`)}`,
 		},
 		body: 'grant_type=client_credentials',
-	});
-	const data = await response.json();
-	return data.access_token;
+	})
+		.then((data) => data.json())
+		.then((data) => data.access_token);
+};
+
+export const getPrivateClientToken = async () => {
+	const response = await fetch(
+		'https://clienttoken.spotify.com/v1/clienttoken',
+		{
+			method: 'POST',
+			headers: {
+				accept: 'application/json',
+				'accept-encoding': 'gzip, deflate, br',
+				'content-type': 'application/json',
+			},
+			body: JSON.stringify({
+				client_data: {
+					client_version: '1.2.8.483.g5c2510b6',
+					client_id: import.meta.env.VITE_SPOTIFY_PRIVATE_CLIENT_ID,
+					js_sdk_data: {
+						device_brand: 'Nexus',
+						device_model: 'mobile',
+						os: 'Android',
+						os_version: '6.0',
+					},
+				},
+			}),
+		}
+	)
+		.then((data) => data.json())
+		.then((data) => data.granted_token.token);
+
+	return response;
+};
+
+export const getPrivateToken = async () => {
+	const accessToken = await fetch('https://open.spotify.com')
+		.then((response) => response.text())
+		.then((html) => {
+			const parser = new DOMParser();
+			const doc = parser.parseFromString(html, 'text/html');
+			const scriptElement = doc.querySelector('#session');
+
+			if (scriptElement) {
+				const jsonDataString = scriptElement.textContent;
+				const extractedJson = JSON.parse(jsonDataString as string);
+				return extractedJson.accessToken;
+			} else {
+				return null;
+			}
+		});
+
+	return accessToken;
 };
 
 export const getPlaylists = async (
 	query: string,
 	offset: number = 0,
-	limit: number = 20
+	limit: number = 50
 ) => {
-	const accessToken = await getToken();
+	const accessToken = sessionStorage.getItem('token');
+
 	const response = await fetch(
 		`https://api.spotify.com/v1/search?q=${query}&type=playlist&offset=${offset}&limit=${limit}`,
 		{
@@ -30,16 +80,11 @@ export const getPlaylists = async (
 		}
 	);
 	const data = await response.json();
-	const playlists = data.playlists.items;
+	const playlists = data.playlists;
 
-	const promises = playlists.map(async (playlist: any) => {
-		const [playlistData, profileData] = await Promise.all([
+	const promises = playlists.items.map(async (playlist: any) => {
+		const [playlistData] = await Promise.all([
 			fetch(`https://api.spotify.com/v1/playlists/${playlist.id}`, {
-				headers: {
-					Authorization: `Bearer ${accessToken}`,
-				},
-			}).then((response) => response.json()),
-			fetch(`https://api.spotify.com/v1/users/${playlist.ownerId}`, {
 				headers: {
 					Authorization: `Bearer ${accessToken}`,
 				},
@@ -47,6 +92,7 @@ export const getPlaylists = async (
 		]);
 
 		return {
+			id: playlist.id,
 			name: playlistData.name,
 			href: playlistData.external_urls.spotify,
 			description: playlistData.description,
@@ -54,5 +100,76 @@ export const getPlaylists = async (
 		};
 	});
 
-	return Promise.all(promises);
+	const newPlaylists = await Promise.all(promises);
+	const uniquePlaylists = newPlaylists.filter(
+		(playlist, index, arr) =>
+			arr.findIndex((p) => p.id === playlist.id) === index
+	);
+
+	return { items: uniquePlaylists, total: playlists.total };
+};
+
+export const getDiscoveredOn = async (query: string) => {
+	const accessToken = sessionStorage.getItem('token');
+	const privateToken = sessionStorage.getItem('privateToken');
+
+	const artistSearchInfo = await fetch(
+		`https://api.spotify.com/v1/search?q=${query}&type=artist`,
+		{
+			headers: {
+				Authorization: `Bearer ${accessToken}`,
+			},
+		}
+	).then((response) => response.json());
+
+	const artistId = artistSearchInfo.artists.items[0].id;
+
+	const playlists = await fetch(
+		`https://api-partner.spotify.com/pathfinder/v1/query?operationName=queryArtistDiscoveredOn&variables=%7B%22uri%22%3A%22spotify%3Aartist%3A${artistId}%22%7D&extensions=%7B%22persistedQuery%22%3A%7B%22version%22%3A1%2C%22sha256Hash%22%3A%226ed3d339827c96f7220da43131006bee86fed821e2232eca32f6bde614defa65%22%7D%7D`,
+		{
+			headers: {
+				Authorization: `Bearer ${privateToken}`,
+			},
+		}
+	)
+		.then((res) => res.json())
+		.then((res) => res.data.artistUnion.relatedContent.discoveredOnV2.items);
+
+	const promises = playlists.map(async (playlist: any) => {
+		if (playlist.data.__typename === 'NotFound') {
+			return {
+				id: Math.random().toString(36).substring(7),
+				name: "Can't find playlist",
+			};
+		}
+
+		const [playlistData] = await Promise.all([
+			fetch(
+				`https://api.spotify.com/v1/playlists/${
+					playlist.data.uri.split('spotify:playlist:')[1]
+				}`,
+				{
+					headers: {
+						Authorization: `Bearer ${accessToken}`,
+					},
+				}
+			).then((response) => response.json()),
+		]);
+
+		return {
+			id: playlist.data.uri.split('spotify:playlist:')[1],
+			name: playlistData.name,
+			href: playlistData.external_urls.spotify,
+			description: playlistData.description,
+			followers: playlistData.followers.total,
+		};
+	});
+
+	const newPlaylists = await Promise.all(promises);
+	const uniquePlaylists = newPlaylists.filter(
+		(playlist, index, arr) =>
+			arr.findIndex((p) => p.id === playlist.id) === index
+	);
+
+	return uniquePlaylists;
 };

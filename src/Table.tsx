@@ -1,6 +1,7 @@
 import React from 'react';
 
 type Playlist = {
+	id: string;
 	name: string;
 	description: string;
 	followers: number;
@@ -23,7 +24,7 @@ const Table: React.FC<TableProps> = ({ playlists }) => {
 			</thead>
 			<tbody>
 				{playlists.map((playlist) => (
-					<tr key={playlist.name}>
+					<tr key={playlist.id}>
 						<td>
 							<a href={playlist.href}>{playlist.name}</a>
 						</td>
