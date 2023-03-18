@@ -1,3 +1,5 @@
+import { regexEmail, regexIG, regexLink } from './utils/regex';
+
 const clientId = import.meta.env.VITE_SPOTIFY_CLIENT_ID;
 const clientSecret = import.meta.env.VITE_SPOTIFY_CLIENT_SECRET;
 
@@ -12,36 +14,6 @@ export const getToken = () => {
 	})
 		.then((data) => data.json())
 		.then((data) => data.access_token);
-};
-
-export const getPrivateClientToken = async () => {
-	const response = await fetch(
-		'https://clienttoken.spotify.com/v1/clienttoken',
-		{
-			method: 'POST',
-			headers: {
-				accept: 'application/json',
-				'accept-encoding': 'gzip, deflate, br',
-				'content-type': 'application/json',
-			},
-			body: JSON.stringify({
-				client_data: {
-					client_version: '1.2.8.483.g5c2510b6',
-					client_id: import.meta.env.VITE_SPOTIFY_PRIVATE_CLIENT_ID,
-					js_sdk_data: {
-						device_brand: 'Nexus',
-						device_model: 'mobile',
-						os: 'Android',
-						os_version: '6.0',
-					},
-				},
-			}),
-		}
-	)
-		.then((data) => data.json())
-		.then((data) => data.granted_token.token);
-
-	return response;
 };
 
 export const getPrivateToken = async () => {
@@ -91,12 +63,22 @@ export const getPlaylists = async (
 			}).then((response) => response.json()),
 		]);
 
+		const contactMatches =
+			(playlistData.description || '').match(regexEmail) || [];
+		const igMatches = (playlistData.description || '').match(regexIG) || [];
+		const linkMatches = (playlistData.description || '').match(regexLink) || [];
+
 		return {
 			id: playlist.id,
 			name: playlistData.name,
 			href: playlistData.external_urls.spotify,
 			description: playlistData.description,
 			followers: playlistData.followers.total,
+			author: playlist.owner.display_name,
+			authorHref: playlist.owner.external_urls.spotify,
+			contacts: [...contactMatches, ...igMatches, ...linkMatches].filter(
+				(match, index, arr) => arr.indexOf(match) === index
+			),
 		};
 	});
 
@@ -156,12 +138,23 @@ export const getDiscoveredOn = async (query: string) => {
 			).then((response) => response.json()),
 		]);
 
+		const contactMatches =
+			(playlistData.description || '').match(regexEmail) || [];
+		const igMatches = (playlistData.description || '').match(regexIG) || [];
+		const linkMatches = (playlistData.description || '').match(regexLink) || [];
+
 		return {
 			id: playlist.data.uri.split('spotify:playlist:')[1],
 			name: playlistData.name,
 			href: playlistData.external_urls.spotify,
 			description: playlistData.description,
 			followers: playlistData.followers.total,
+			author: playlistData.owner.display_name,
+			authorHref: playlistData.owner.external_urls.spotify,
+
+			contacts: [...contactMatches, ...igMatches, ...linkMatches].filter(
+				(match, index, arr) => arr.indexOf(match) === index
+			),
 		};
 	});
 

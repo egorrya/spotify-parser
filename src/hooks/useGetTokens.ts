@@ -5,7 +5,8 @@ import { getPrivateToken } from './../api';
 export const useGetTokens = () => {
 	useEffect(() => {
 		getPrivateToken().then((token) => {
-			sessionStorage.setItem('privateToken', token);
+			if (token) sessionStorage.setItem('privateToken', token);
+			if (!token) sessionStorage.removeItem('privateToken');
 		});
 
 		getToken().then((token) => {

@@ -3,14 +3,7 @@ import AddMoreButton from './AddMoreButton';
 import { getDiscoveredOn, getPlaylists } from './api';
 import { useGetTokens } from './hooks/useGetTokens';
 import Table from './Table';
-
-type Playlist = {
-	id: string;
-	name: string;
-	description: string;
-	followers: number;
-	href: string;
-};
+import { Playlist } from './types';
 
 type SearchType = 'playlist' | 'artist';
 
@@ -24,6 +17,7 @@ const App: React.FC = () => {
 	const [query, setQuery] = useState('');
 	const [searchType, setSearchType] = useState<SearchType>('playlist');
 	const [total, setTotal] = useState(0);
+	const [hideSpotify, setHideSpotify] = useState(false);
 
 	const activeRequest = async (
 		query: string,
@@ -52,31 +46,59 @@ const App: React.FC = () => {
 		setSearchType(event.target.value as SearchType);
 	};
 
-	const handleInputChange = (event: React.ChangeEvent<HTMLInputElement>) => {
-		setQuery(event.target.value);
-	};
-
 	const handleSubmit = async (event: React.FormEvent<HTMLFormElement>) => {
 		event.preventDefault();
 		const newPlaylists = await activeRequest(query, 0);
-		setPlaylists(newPlaylists as Playlist[]);
-		setOffset(DEFAULT_LIMIT);
+		await setPlaylists(newPlaylists as Playlist[]);
+		await setOffset(DEFAULT_LIMIT);
 	};
+
+	const privateToken = sessionStorage.getItem('privateToken');
 
 	return (
 		<div>
 			<form onSubmit={handleSubmit}>
 				<select value={searchType} onChange={handleSelectChange}>
 					<option value='playlist'>Playlists Search</option>
-					{sessionStorage.getItem('privateToken') && (
-						<option value='artist'>Artist's Discovered On</option>
-					)}
+					<option value='artist'>Artist's Discovered On</option>
 				</select>
 
-				<input type='text' value={query} onChange={handleInputChange} />
-				<button type='submit'>Search</button>
+				{!privateToken && searchType === 'artist' ? (
+					<a href='https://spotify.com' target='_blank'>
+						Login On Spotify and reload that page
+					</a>
+				) : (
+					<>
+						<input
+							type='text'
+							value={query}
+							onChange={(e) => setQuery(e.target.value)}
+						/>
+						<button type='submit'>Search</button>
+					</>
+				)}
+
+				<div>
+					<label htmlFor='hideSpotify'>Hide playlists by Spotify:</label>
+					<input
+						type='checkbox'
+						id='hideSpotify'
+						name='hideSpotify'
+						checked={hideSpotify}
+						onChange={(e) => setHideSpotify(e.target.checked)}
+					/>
+				</div>
 			</form>
-			{playlists.length > 0 && <Table playlists={playlists} />}
+
+			{playlists.length > 0 && (
+				<Table
+					playlists={
+						hideSpotify
+							? playlists.filter((p) => p.author !== 'Spotify')
+							: playlists
+					}
+				/>
+			)}
 
 			{playlists.length > 0 && total >= offset && searchType === 'playlist' && (
 				<AddMoreButton onClick={loadMore} />
